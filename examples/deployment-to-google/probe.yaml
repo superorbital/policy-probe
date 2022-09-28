@@ -1,0 +1,13 @@
+kind: Probe
+apiVersion: probe.superorbital.io/v1alpha1
+spec:
+  expect: Pass
+  from:
+    deployment:
+      namespace: default
+      name: nginx-deployment
+  to:
+    server:
+      port: 80
+      host: google.com
+      protocol: tcp

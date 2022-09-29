@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -33,4 +35,12 @@ type ServerSpec struct {
 	Host     string
 	Port     int
 	Protocol string
+}
+
+func (p Probe) Validate() error {
+	if p.From.Probe == nil && p.From.Deployment == nil {
+		return fmt.Errorf("must have a from")
+
+	}
+	return nil
 }

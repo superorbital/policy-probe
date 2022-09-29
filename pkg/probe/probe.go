@@ -25,9 +25,15 @@ import (
 )
 
 type Probe struct {
-	client                 *kubernetes.Clientset
-	config                 config.Probe
-	podName, containerName string
+	client *kubernetes.Clientset
+	config config.Probe
+}
+
+type InstalledProbe struct {
+	client *kubernetes.Clientset
+	podName,
+	containerName,
+	namespace string
 }
 
 func New(config config.Probe, client *kubernetes.Clientset) *Probe {
@@ -37,80 +43,43 @@ func New(config config.Probe, client *kubernetes.Clientset) *Probe {
 	}
 }
 
-func (p *Probe) Install(ctx context.Context) error {
-	deployment, err := p.client.AppsV1().Deployments(p.config.From.Deployment.Namespace).Get(ctx, p.config.From.Deployment.Name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to find deployment: %w", err)
-	}
-	pods, err := p.client.CoreV1().Pods(p.config.From.Deployment.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: metav1.FormatLabelSelector(deployment.Spec.Selector),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list pods: %w", err)
-	}
-	if len(pods.Items) < 1 {
-		return fmt.Errorf("could not find a matching pod")
-	}
-
-	pod := pods.Items[0]
-	podJS, err := json.Marshal(pod)
-	if err != nil {
-		return fmt.Errorf("error creating JSON for pod: %w", err)
-	}
-
-	copied := pod.DeepCopy()
-
-	p.podName = pod.Name
-	p.containerName = fmt.Sprintf("probe-%s", rand.String(5))
-	ec := &corev1.EphemeralContainer{
-		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-			Name:    p.containerName,
-			Image:   "alpine:latest",
-			Command: []string{"nc"},
-			Args:    []string{"-vz", p.config.To.Server.Host, strconv.Itoa(p.config.To.Server.Port)},
-		},
-	}
-	copied.Spec.EphemeralContainers = append(copied.Spec.EphemeralContainers, *ec)
-	debugJS, err := json.Marshal(copied)
-	if err != nil {
-		return fmt.Errorf("error creating JSON for debug container: %w", err)
-	}
-
-	patch, err := strategicpatch.CreateTwoWayMergePatch(podJS, debugJS, pod)
-	if err != nil {
-		return fmt.Errorf("error creating patch to add debug container: %w", err)
-	}
-	log.Printf("generated strategic merge patch for debug container: %s", patch)
-
-	result, err := p.client.CoreV1().Pods(p.config.From.Deployment.Namespace).Patch(ctx, pod.Name, types.StrategicMergePatchType, patch, metav1.PatchOptions{}, "ephemeralcontainers")
-	if err != nil {
-		// The apiserver will return a 404 when the EphemeralContainers feature is disabled because the `/ephemeralcontainers` subresource
-		// is missing. Unlike the 404 returned by a missing pod, the status details will be empty.
-		if serr, ok := err.(*errors.StatusError); ok && serr.Status().Reason == metav1.StatusReasonNotFound && serr.ErrStatus.Details.Name == "" {
-			return fmt.Errorf("ephemeral containers are disabled for this cluster (error from server: %w)", err)
+func (p *Probe) Install(ctx context.Context) (*InstalledProbe, error) {
+	switch {
+	case p.config.From.Deployment != nil:
+		// install ephemeral pod
+		podRef, err := p.getPod(ctx, p.config.From.Deployment)
+		if err != nil {
+			return nil, fmt.Errorf("unable to fetch deployment: %w", err)
 		}
-
-		// The Kind used for the /ephemeralcontainers subresource changed in 1.22. When presented with an unexpected
-		// Kind the api server will respond with a not-registered error.
-		if runtime.IsNotRegisteredError(err) {
-			return fmt.Errorf("ephemeral containers are disabled for this cluster (error from server: %w)", err)
+		install, err := p.installEphemeralPod(ctx, podRef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to install ephemeral pod: %w", err)
 		}
+		return install, nil
+	case p.config.From.Pod != nil:
+		install, err := p.installEphemeralPod(ctx, p.config.From.Pod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to install ephemeral pod: %w", err)
+		}
+		return install, nil
+	case p.config.From.Probe != nil:
+		// create probe pod
+		panic("todo")
+	default:
+		panic("wtf")
 	}
-	_ = result
-	log.Printf("successfully started ephemeral container")
-	return nil
 }
 
-func (p *Probe) Wait(ctx context.Context) error {
+func (p *InstalledProbe) Wait(ctx context.Context) error {
 	fieldSelector := fields.OneTermEqualSelector("metadata.name", p.podName).String()
 	lw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			options.FieldSelector = fieldSelector
-			return p.client.CoreV1().Pods(p.config.From.Deployment.Namespace).List(ctx, options)
+			return p.client.CoreV1().Pods(p.namespace).List(ctx, options)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			options.FieldSelector = fieldSelector
-			return p.client.CoreV1().Pods(p.config.From.Deployment.Namespace).Watch(ctx, options)
+			return p.client.CoreV1().Pods(p.namespace).Watch(ctx, options)
 		},
 	}
 	_, err := watchtools.UntilWithSync(ctx, lw, &corev1.Pod{}, nil, func(ev watch.Event) (bool, error) {
@@ -143,8 +112,8 @@ func (p *Probe) Wait(ctx context.Context) error {
 	return nil
 }
 
-func (p *Probe) Logs(ctx context.Context) (io.ReadCloser, error) {
-	return p.client.CoreV1().Pods(p.config.From.Deployment.Namespace).GetLogs(p.podName, &corev1.PodLogOptions{
+func (p *InstalledProbe) Logs(ctx context.Context) (io.ReadCloser, error) {
+	return p.client.CoreV1().Pods(p.namespace).GetLogs(p.podName, &corev1.PodLogOptions{
 		SinceSeconds: iptr(60),
 		Follow:       true,
 		Container:    p.containerName,
@@ -165,4 +134,100 @@ func getContainerStatusByName(pod *corev1.Pod, containerName string) *corev1.Con
 
 func iptr(x int64) *int64 {
 	return &x
+}
+
+func (p *Probe) getPod(ctx context.Context, d *config.ObjectSpec) (*config.ObjectSpec, error) {
+	switch {
+	case d.LabelSelector != nil:
+		deployments, err := p.client.AppsV1().Deployments(d.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: metav1.FormatLabelSelector(d.LabelSelector),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list deployments: %w", err)
+		}
+		if len(deployments.Items) < 1 {
+			return nil, fmt.Errorf("no deployments found for selector")
+		}
+		// TODO: test all matching deployments?
+		return &config.ObjectSpec{
+			Namespace:     d.Namespace,
+			LabelSelector: deployments.Items[0].Spec.Selector,
+		}, nil
+	case d.Name != nil:
+		deployment, err := p.client.AppsV1().Deployments(d.Namespace).Get(ctx, *d.Name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return &config.ObjectSpec{
+			Namespace:     d.Namespace,
+			LabelSelector: deployment.Spec.Selector,
+		}, nil
+	default:
+		return nil, fmt.Errorf("either labelSelector or name must be specified")
+	}
+}
+
+func (p *Probe) installEphemeralPod(ctx context.Context, d *config.ObjectSpec) (*InstalledProbe, error) {
+	var pod *corev1.Pod
+	switch {
+	case d.LabelSelector != nil:
+		pods, err := p.client.CoreV1().Pods(d.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: metav1.FormatLabelSelector(d.LabelSelector),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list pods: %w", err)
+		}
+		if len(pods.Items) < 1 {
+			return nil, fmt.Errorf("could not find a matching pod")
+		}
+		// TODO: test all matching pods?
+		pod = &pods.Items[0]
+	case d.Name != nil:
+		var err error
+		pod, err = p.client.CoreV1().Pods(d.Namespace).Get(ctx, *d.Name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pod: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("either labelSelector or name must be specified")
+	}
+
+	podJS, err := json.Marshal(pod)
+	if err != nil {
+		return nil, fmt.Errorf("error creating JSON for pod: %w", err)
+	}
+
+	copied := pod.DeepCopy()
+
+	ec := &corev1.EphemeralContainer{
+		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
+			Name:    fmt.Sprintf("probe-%s", rand.String(5)),
+			Image:   "alpine:latest",
+			Command: []string{"nc"},
+			Args:    []string{"-vz", p.config.To.Server.Host, strconv.Itoa(p.config.To.Server.Port)},
+		},
+	}
+	copied.Spec.EphemeralContainers = append(copied.Spec.EphemeralContainers, *ec)
+	debugJS, err := json.Marshal(copied)
+	if err != nil {
+		return nil, fmt.Errorf("error creating JSON for debug container: %w", err)
+	}
+
+	patch, err := strategicpatch.CreateTwoWayMergePatch(podJS, debugJS, pod)
+	if err != nil {
+		return nil, fmt.Errorf("error creating patch to add debug container: %w", err)
+	}
+	log.Printf("generated strategic merge patch for debug container: %s", patch)
+
+	_, err = p.client.CoreV1().Pods(d.Namespace).Patch(ctx, pod.Name, types.StrategicMergePatchType, patch, metav1.PatchOptions{}, "ephemeralcontainers")
+	if err != nil {
+		return nil, fmt.Errorf("error adding ephemeral container to pod: %w", err)
+	}
+
+	return &InstalledProbe{
+		client:        p.client,
+		podName:       pod.Name,
+		containerName: ec.Name,
+		namespace:     pod.Namespace,
+	}, nil
 }

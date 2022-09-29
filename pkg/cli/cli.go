@@ -75,23 +75,20 @@ func RootCmd(ctx context.Context) error {
 		return fmt.Errorf("failed to unmarshal probe: %v", err)
 	}
 
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
 	p := probe.New(config, clientset)
-	if err := p.Install(ctx); err != nil {
+	installedProbe, err := p.Install(ctx)
+	if err != nil {
 		return err
 	}
 
 	ctx, cancel := watchtools.ContextWithOptionalTimeout(ctx, time.Minute)
 	defer cancel()
-	if err := p.Wait(ctx); err != nil {
+	if err := installedProbe.Wait(ctx); err != nil {
 		return err
 	}
 
 	log.Println("getting logs")
-	logs, err := p.Logs(ctx)
+	logs, err := installedProbe.Logs(ctx)
 	if err != nil {
 		return err
 	}

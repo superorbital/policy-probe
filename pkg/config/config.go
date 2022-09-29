@@ -1,9 +1,8 @@
 package config
 
 import (
-	"fmt"
-
-	"k8s.io/apimachinery/pkg/types"
+	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Probe struct {
@@ -13,16 +12,17 @@ type Probe struct {
 }
 
 type FromKinds struct {
-	Deployment *types.NamespacedName
+	Deployment *ObjectSpec
+	Pod        *ObjectSpec
 	Probe      *ProbeSpec
 }
 
 type ToKinds struct {
-	Deployment *types.NamespacedName
-	Pod        *types.NamespacedName
+	Deployment *ObjectSpec
+	Pod        *ObjectSpec
 	Probe      *ProbeSpec
 	Server     *ServerSpec
-	Service    *types.NamespacedName
+	Service    *ObjectSpec
 }
 
 type ProbeSpec struct {
@@ -37,10 +37,9 @@ type ServerSpec struct {
 	Protocol string
 }
 
-func (p Probe) Validate() error {
-	if p.From.Probe == nil && p.From.Deployment == nil {
-		return fmt.Errorf("must have a from")
-
-	}
-	return nil
+type ObjectSpec struct {
+	Namespace string
+	Name      *string
+	*metav1.LabelSelector
+	networkingv1.NetworkPolicyPort
 }

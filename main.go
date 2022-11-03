@@ -1,13 +1,7 @@
 package main
 
-import (
-	"log"
-
-	"github.com/superorbital/kubectl-probe/pkg/cli"
-)
+import "github.com/superorbital/kubectl-probe/cmd"
 
 func main() {
-	if err := cli.New().Execute(); err != nil {
-		log.Fatalf("error during command execution: %v", err)
-	}
+	cmd.New().Execute()
 }

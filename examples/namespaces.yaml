@@ -1,0 +1,22 @@
+apiVersion: networking.superorbital.io/v1beta1
+kind: TestSuite
+metadata:
+  name: namespaces
+spec:
+  testCases:
+    - description: Pod in namespace a cannot reach namespace b
+      expect: Fail
+      from:
+        probe:
+          namespace: a
+      to:
+        probe:
+          namespace: b
+    - description: Pod in namespace c can reach namespace b
+      expect: Pass
+      from:
+        probe:
+          namespace: c
+      to:
+        probe:
+          namespace: b

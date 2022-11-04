@@ -43,9 +43,11 @@ type Probe struct {
 }
 
 type ProbeSpec struct {
-	Namespace   string
-	Labels      map[string]string
-	Annotations map[string]string
+	Namespace   string            `json:"namespace,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Source      *ProbeConfig      `json:"source,omitempty"`
+	Sink        *ProbeConfig      `json:"destination,omitempty"`
 }
 
 type ServerSpec struct {
@@ -61,11 +63,15 @@ type ObjectSpec struct {
 	networkingv1.NetworkPolicyPort
 }
 
-type Destination interface{}
+type Sink interface {
+	Delete() error
+}
+
 type Source interface {
-	AssertReachable(to Destination)
-	AssertUnreachable(to Destination)
-	Config() *SourceConfig
+	AssertReachable(to Sink)
+	AssertUnreachable(to Sink)
+	Config() *ProbeConfig
+	Delete() error
 }
 
 type ProtocolType string
@@ -75,16 +81,9 @@ const (
 	UDPProtocolType ProtocolType = "udp"
 )
 
-type SourceConfig struct {
-	Address  string
-	Port     int
-	Protocol ProtocolType
-	Message  string
-}
-
-type DestinationConfig struct {
-	Address  string
-	Port     int
-	Protocol ProtocolType
-	Message  string
+type ProbeConfig struct {
+	Address  string       `json:"address,omitempty"`
+	Port     int          `json:"port,omitempty"`
+	Protocol ProtocolType `json:"protocol,omitempty"`
+	Message  string       `json:"message,omitempty"`
 }

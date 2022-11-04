@@ -3,7 +3,7 @@
 ## Usage
 
 ```bash
-kubectl probe --config probe.yaml
+kubectl probe --config testsuite.yaml
 ```
 
 ---
@@ -14,17 +14,31 @@ This will:
 - Assert that it is unable to reach any port on the `test-service` listed on the service
 
 ```yaml
-expect: Fail
-from:
-  probe:
-    namespace: a
-    labels:
-      role: api
-to:
-  service:
-    namespace: b
-    name: test-service
-    protocol: udp
+apiVersion: networking.superorbital.io/v1beta1
+kind: TestSuite
+metadata:
+  name: service-a
+spec:
+  testCases:
+  - description: Pod in namespace a cannot reach service b
+    expect: Fail
+    from:
+      probe:
+        namespace: a
+    to:
+      probe:
+        namespace: b
+
+  - description: Pod in namespace c can reach service b
+    expect: Pass
+    from:
+      probe:
+        namespace: c
+    to:
+      service:
+        namespace: b
+        name: test-service
+
 ```
 
 ---

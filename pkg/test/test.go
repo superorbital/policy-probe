@@ -10,18 +10,18 @@ import (
 
 func Run(ctx context.Context, cfg api.TestSuite, factory *Factory) error {
 	for _, tc := range cfg.Spec.TestCases {
-		from, err := factory.BuildFrom(&tc.From)
+		from, err := factory.BuildSource(ctx, &tc.From)
 		if err != nil {
 			return fmt.Errorf("failed to create from: %w", err)
 		}
-		to, err := factory.BuildTo(from, &tc.To)
+		sink, err := factory.BuildSink(ctx, from, &tc.To)
 		if err != nil {
 			return fmt.Errorf("failed to create to: %w", err)
 		}
 		if tc.Expect == api.PassExpectType {
-			from.AssertReachable(to)
+			from.AssertReachable(sink)
 		} else {
-			from.AssertUnreachable(to)
+			from.AssertUnreachable(sink)
 		}
 	}
 	return nil
@@ -31,19 +31,20 @@ type Factory struct {
 	probes *probe.Factory
 }
 
-func (f *Factory) BuildFrom(cfg *api.FromKinds) (api.Source, error) {
+func (f *Factory) BuildSource(ctx context.Context, cfg *api.FromKinds) (api.Source, error) {
 	switch {
 	case cfg.Probe != nil:
-		return f.probes.CreateSource(probe.Source(cfg))
+		return f.probes.Create(ctx, cfg.Probe)
 	default:
 		panic("not implemented")
 	}
 }
 
-func (f *Factory) BuildTo(source api.Source, cfg *api.ToKinds) (api.Destination, error) {
+func (f *Factory) BuildSink(ctx context.Context, source api.Source, cfg *api.ToKinds) (api.Sink, error) {
 	switch {
 	case cfg.Probe != nil:
-		return f.probes.CreateDestination(probe.Destination(source.Config(), cfg))
+		cfg.Probe.Sink = source.Config()
+		return f.probes.Create(ctx, cfg.Probe)
 	default:
 		panic("not implemented")
 	}

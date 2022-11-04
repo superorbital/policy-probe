@@ -13,7 +13,7 @@ import (
 )
 
 func Source() *cobra.Command {
-	var cfg api.SourceConfig
+	var cfg api.ProbeConfig
 	cmd := &cobra.Command{
 		Use:   "source",
 		Short: "A brief description of your command",
@@ -30,10 +30,10 @@ to quickly create a Cobra application.`,
 			return probe.SourceCmd(cmd.Context(), cfg)
 		},
 	}
-	cmd.Flags().StringVar((*string)(&cfg.Protocol), "protocol", "tcp", "protocol to listen for, tcp or udp")
-	cmd.Flags().IntVar(&cfg.Port, "port", 0, "port to listen on")
-	cmd.Flags().StringVar(&cfg.Address, "address", "0.0.0.0", "address to listen on")
-	cmd.Flags().StringVar(&cfg.Message, "message", "hello world", "message to listen for")
+	cmd.Flags().StringVar((*string)(&cfg.Protocol), "protocol", "tcp", "tcp|udp")
+	cmd.Flags().IntVar(&cfg.Port, "port", 0, "")
+	cmd.Flags().StringVar(&cfg.Address, "address", "0.0.0.0", "")
+	cmd.Flags().StringVar(&cfg.Message, "message", "hello world", "")
 	viper.BindPFlags(cmd.Flags())
 	return cmd
 }

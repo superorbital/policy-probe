@@ -42,6 +42,6 @@ to quickly create a Cobra application.`,
 	viper.AutomaticEnv()
 	cmd.Flags().StringVar(&cfgFile, "config", "", "config file")
 	cmd.AddCommand(Source())
-	cmd.AddCommand(Destination())
+	cmd.AddCommand(Sink())
 	return cmd
 }

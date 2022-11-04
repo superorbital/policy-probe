@@ -9,10 +9,10 @@ import (
 	"github.com/superorbital/kubectl-probe/pkg/probe"
 )
 
-func Destination() *cobra.Command {
-	var cfg api.DestinationConfig
+func Sink() *cobra.Command {
+	var cfg api.ProbeConfig
 	cmd := &cobra.Command{
-		Use:   "destination",
+		Use:   "sink",
 		Short: "A brief description of your command",
 		Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -24,12 +24,13 @@ to quickly create a Cobra application.`,
 			if err := viper.Unmarshal(&cfg); err != nil {
 				return fmt.Errorf("failed to parse config: %w", err)
 			}
-			return probe.DestinationCmd(cmd.Context(), cfg)
+			return probe.SinkCmd(cmd.Context(), cfg)
 		},
 	}
 	cmd.Flags().StringVar((*string)(&cfg.Protocol), "protocol", "tcp", "tcp|udp")
 	cmd.Flags().IntVar(&cfg.Port, "port", 0, "")
 	cmd.Flags().StringVar(&cfg.Address, "address", "0.0.0.0", "")
 	cmd.Flags().StringVar(&cfg.Message, "message", "hello world", "")
+	viper.BindPFlags(cmd.Flags())
 	return cmd
 }

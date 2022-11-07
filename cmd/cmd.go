@@ -9,7 +9,6 @@ import (
 	"github.com/superorbital/kubectl-probe/pkg/test"
 )
 
-// rootCmd represents the base command when called without any subcommands
 func New() *cobra.Command {
 	var cfgFile string
 	cmd := &cobra.Command{
@@ -22,8 +21,6 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 		SilenceUsage: true, // Don't show usage on errors
-		// Uncomment the following line if your bare application
-		// has an action associated with it:
 		Run: func(cmd *cobra.Command, args []string) {
 			viper.SetConfigFile(cfgFile)
 			if err := viper.ReadInConfig(); err != nil {
@@ -41,7 +38,6 @@ to quickly create a Cobra application.`,
 	}
 	viper.AutomaticEnv()
 	cmd.Flags().StringVar(&cfgFile, "config", "", "config file")
-	cmd.AddCommand(Source())
-	cmd.AddCommand(Sink())
+	cmd.AddCommand(Probe())
 	return cmd
 }

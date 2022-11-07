@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -9,10 +11,10 @@ type TestSuite struct {
 	Spec TestSuiteSpec `json:"spec,omitempty"`
 }
 type TestSuiteSpec struct {
-	TestCases []TestCaseSpec `json:"test_cases,omitempty"`
+	TestCases []TestCase `json:"test_cases,omitempty"`
 }
 
-type TestCaseSpec struct {
+type TestCase struct {
 	Description string     `json:"description,omitempty"`
 	Expect      ExpectType `json:"expect,omitempty"`
 	From        FromKinds  `json:"from,omitempty"`
@@ -47,7 +49,6 @@ type ProbeSpec struct {
 	Labels      map[string]string `json:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
 	Source      *ProbeConfig      `json:"source,omitempty"`
-	Sink        *ProbeConfig      `json:"destination,omitempty"`
 }
 
 type ServerSpec struct {
@@ -68,8 +69,8 @@ type Sink interface {
 }
 
 type Source interface {
-	AssertReachable(to Sink)
-	AssertUnreachable(to Sink)
+	AssertReachable()
+	AssertUnreachable()
 	Config() *ProbeConfig
 	Delete() error
 }
@@ -82,8 +83,9 @@ const (
 )
 
 type ProbeConfig struct {
-	Address  string       `json:"address,omitempty"`
-	Port     int          `json:"port,omitempty"`
-	Protocol ProtocolType `json:"protocol,omitempty"`
-	Message  string       `json:"message,omitempty"`
+	Address  string        `json:"address,omitempty"`
+	Port     int           `json:"port,omitempty"`
+	Protocol ProtocolType  `json:"protocol,omitempty"`
+	Message  string        `json:"message,omitempty"`
+	Interval time.Duration `json:"interval,omitempty"`
 }

@@ -4,19 +4,17 @@ metadata:
   name: namespaces
 spec:
   testCases:
-    - description: Pod in namespace a cannot reach namespace b
+    - description: Pod in namespace a cannot reach api.prod
       expect: Fail
       from:
         probe:
           namespace: a
       to:
-        probe:
-          namespace: b
-    - description: Pod in namespace c can reach namespace b
-      expect: Pass
+        address: api.prod
+    - description: Pod in namespace b can reach api.prod
+      expect: Fail
       from:
         probe:
-          namespace: c
-      to:
-        probe:
           namespace: b
+      to:
+        address: api.prod

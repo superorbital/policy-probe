@@ -4,17 +4,19 @@ metadata:
   name: namespaces
 spec:
   testCases:
-    - description: Pod in namespace a cannot reach api.prod
+    - description: Pod in namespace a **cannot** reach api.prod
       expect: Fail
       from:
-        probe:
+        deployment:
+          name: web
           namespace: a
       to:
-        address: api.prod
-    - description: Pod in namespace b can reach api.prod
-      expect: Fail
+        address: api.prod:80
+    - description: Pod in namespace b **can** reach api.prod
+      expect: Pass
       from:
-        probe:
+        deployment:
+          name: web
           namespace: b
       to:
-        address: api.prod
+        address: api.prod:80

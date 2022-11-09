@@ -11,14 +11,16 @@ import (
 	"github.com/rotisserie/eris"
 	"github.com/superorbital/kubectl-probe/pkg/api"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
+
+const probeName = "policy-probe"
 
 type Factory struct {
 	client     *kubernetes.Clientset
@@ -72,9 +74,8 @@ func (f *Factory) getPod(ctx context.Context, d *api.ObjectSpec) (*api.ObjectSpe
 }
 
 type Probe struct {
-	pod           *v1.Pod
-	client        *kubernetes.Clientset
-	containerName string
+	pod    *v1.Pod
+	client *kubernetes.Clientset
 }
 
 type probeLog struct {
@@ -82,6 +83,20 @@ type probeLog struct {
 	Success *int    `json:"success,omitempty"`
 	Msg     string  `json:"msg,omitempty"`
 	Error   *string `json:"error,omitempty"`
+}
+
+func (l probeLog) MarshalLogObject(e zapcore.ObjectEncoder) error {
+	if l.Fail != nil {
+		e.AddInt("fail", *l.Fail)
+	}
+	if l.Success != nil {
+		e.AddInt("success", *l.Success)
+	}
+	e.AddString("msg", l.Msg)
+	if l.Error != nil {
+		e.AddString("error", *l.Error)
+	}
+	return nil
 }
 
 type testResult struct {
@@ -122,7 +137,7 @@ func (p *Probe) assert(ctx context.Context, test func(testResult, testResult) (b
 			return false, err
 		}
 		for _, c := range pod.Status.EphemeralContainerStatuses {
-			if c.Name == p.containerName {
+			if c.Name == probeName {
 				done = c.State.Running != nil
 			}
 		}
@@ -132,24 +147,28 @@ func (p *Probe) assert(ctx context.Context, test func(testResult, testResult) (b
 		return err
 	}
 	stream, err := p.client.CoreV1().Pods(p.pod.Namespace).GetLogs(p.pod.Name, &v1.PodLogOptions{
-		SinceSeconds: iptr(60),
-		Follow:       true,
-		Container:    p.containerName,
+		TailLines: iptr(1),
+		Follow:    true,
+		Container: probeName,
 	}).Stream(ctx)
 	if err != nil {
 		return err
 	}
-	var old testResult
+	var old *testResult
 	return wait.PollImmediateUntil(time.Second, func() (done bool, err error) {
 		var msg probeLog
 		if err = json.NewDecoder(stream).Decode(&msg); err != nil {
 			return false, eris.Wrap(err, "failed to decode stream")
 		}
-		zap.L().Debug("received probe message", zap.Any("message", msg))
+		zap.L().Debug("received probe message", zap.Object("message", msg))
 		if msg.Success != nil && msg.Fail != nil {
 			new := testResult{Success: *msg.Success, Fail: *msg.Fail}
-			done, err = test(old, new)
-			old = new
+			if old == nil {
+				old = &new
+				return false, nil
+			}
+			done, err = test(*old, new)
+			old = &new
 			return
 		}
 		return
@@ -157,30 +176,31 @@ func (p *Probe) assert(ctx context.Context, test func(testResult, testResult) (b
 }
 
 func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to *api.ProbeConfig) (*Probe, error) {
-	var pod *v1.Pod
-	switch {
-	case d.LabelSelector != nil:
-		pods, err := f.client.CoreV1().Pods(d.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: metav1.FormatLabelSelector(d.LabelSelector),
-		})
-		if err != nil {
-			return nil, eris.Wrap(err, "failed to list pods: %w")
-		}
-		if len(pods.Items) < 1 {
-			return nil, eris.New("could not find a matching pod")
-		}
-		// TODO: find if any pods already have the probe
-		pod = &pods.Items[0]
-	case d.Name != nil:
-		var err error
-		pod, err = f.client.CoreV1().Pods(d.Namespace).Get(ctx, *d.Name, metav1.GetOptions{})
-		if err != nil {
-			return nil, eris.Wrap(err, "failed to get pod")
-		}
-	default:
-		return nil, eris.New("either labelSelector or name must be specified")
+	// TODO: figure out how to reconfigure an existing probe
+	pods, err := f.client.CoreV1().Pods(d.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: metav1.FormatLabelSelector(d.LabelSelector),
+	})
+	if err != nil {
+		return nil, eris.Wrap(err, "failed to list pods: %w")
 	}
-
+	if len(pods.Items) < 1 {
+		return nil, eris.New("could not find a matching pod")
+	}
+	for _, pod := range pods.Items {
+		for _, ec := range pod.Spec.EphemeralContainers {
+			if ec.Name == probeName {
+				zap.L().Debug("using existing probe", zap.String("probe", probeName), zap.String("pod", pod.Name), zap.String("namespace", pod.Namespace))
+				return &Probe{
+					pod:    &pod,
+					client: f.client,
+				}, nil
+			}
+		}
+	}
+	if len(pods.Items) == 0 {
+		return nil, eris.New("no pods found")
+	}
+	pod := &pods.Items[0]
 	podJS, err := json.Marshal(pod)
 	if err != nil {
 		return nil, eris.Wrap(err, "error creating JSON for pod")
@@ -194,7 +214,7 @@ func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to
 	}
 	ec := &v1.EphemeralContainer{
 		EphemeralContainerCommon: v1.EphemeralContainerCommon{
-			Name:  fmt.Sprintf("probe-%s", rand.String(5)),
+			Name:  probeName,
 			Image: f.probeImage,
 			Args:  args,
 			Env:   to.ToEnv(),
@@ -216,11 +236,10 @@ func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to
 		return nil, eris.Wrap(err, "error adding ephemeral container to pod")
 	}
 	probe := &Probe{
-		pod:           pod,
-		client:        f.client,
-		containerName: ec.Name,
+		pod:    pod,
+		client: f.client,
 	}
-	zap.L().Debug("created probe", zap.String("probe", probe.containerName), zap.String("pod", pod.Name), zap.String("namespace", pod.Namespace))
+	zap.L().Debug("created probe", zap.String("probe", probeName), zap.String("pod", pod.Name), zap.String("namespace", pod.Namespace))
 
 	return probe, nil
 }

@@ -11,7 +11,7 @@ spec:
           name: web
           namespace: a
       to:
-        address: api.prod:80
+        address: api.prox:80
     - description: Pod in namespace b **can** reach api.prod
       expect: Pass
       from:

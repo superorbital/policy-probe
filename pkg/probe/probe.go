@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rcrowley/go-metrics"
+	"github.com/rotisserie/eris"
 	"github.com/superorbital/kubectl-probe/pkg/api"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
@@ -46,10 +47,10 @@ func (f *Factory) getPod(ctx context.Context, d *api.ObjectSpec) (*api.ObjectSpe
 			LabelSelector: metav1.FormatLabelSelector(d.LabelSelector),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to list deployments: %w", err)
+			return nil, eris.Wrap(err, "failed to list deployments")
 		}
 		if len(deployments.Items) < 1 {
-			return nil, fmt.Errorf("no deployments found for selector")
+			return nil, eris.New("no deployments found for selector")
 		}
 		// TODO: test all matching deployments?
 		return &api.ObjectSpec{
@@ -59,14 +60,14 @@ func (f *Factory) getPod(ctx context.Context, d *api.ObjectSpec) (*api.ObjectSpe
 	case d.Name != nil:
 		deployment, err := f.client.AppsV1().Deployments(d.Namespace).Get(ctx, *d.Name, metav1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("unable to get deployment: %w", err)
+			return nil, eris.Wrap(err, "unable to get deployment")
 		}
 		return &api.ObjectSpec{
 			Namespace:     d.Namespace,
 			LabelSelector: deployment.Spec.Selector,
 		}, nil
 	default:
-		return nil, fmt.Errorf("either labelSelector or name must be specified")
+		return nil, eris.New("either labelSelector or name must be specified")
 	}
 }
 
@@ -91,7 +92,7 @@ type testResult struct {
 func (p *Probe) AssertReachable(ctx context.Context) error {
 	return p.assert(ctx, func(old, new testResult) (bool, error) {
 		if new.Fail > old.Fail {
-			return false, fmt.Errorf("probe was not able to reach destination")
+			return false, eris.New("probe was not able to reach destination")
 		}
 		if new.Success > old.Success {
 			return true, nil
@@ -103,7 +104,7 @@ func (p *Probe) AssertReachable(ctx context.Context) error {
 func (p *Probe) AssertUnreachable(ctx context.Context) error {
 	return p.assert(ctx, func(old, new testResult) (bool, error) {
 		if new.Success > old.Success {
-			return false, fmt.Errorf("probe was able to reach destination")
+			return false, eris.New("probe was able to reach destination")
 		}
 		if new.Fail > old.Fail {
 			return true, nil
@@ -142,7 +143,7 @@ func (p *Probe) assert(ctx context.Context, test func(testResult, testResult) (b
 	return wait.PollImmediateUntil(time.Second, func() (done bool, err error) {
 		var msg probeLog
 		if err = json.NewDecoder(stream).Decode(&msg); err != nil {
-			return false, fmt.Errorf("failed to decode stream: %w", err)
+			return false, eris.Wrap(err, "failed to decode stream")
 		}
 		zap.L().Debug("received probe message", zap.Any("message", msg))
 		if msg.Success != nil && msg.Fail != nil {
@@ -163,10 +164,10 @@ func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to
 			LabelSelector: metav1.FormatLabelSelector(d.LabelSelector),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to list pods: %w", err)
+			return nil, eris.Wrap(err, "failed to list pods: %w")
 		}
 		if len(pods.Items) < 1 {
-			return nil, fmt.Errorf("could not find a matching pod")
+			return nil, eris.New("could not find a matching pod")
 		}
 		// TODO: find if any pods already have the probe
 		pod = &pods.Items[0]
@@ -174,15 +175,15 @@ func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to
 		var err error
 		pod, err = f.client.CoreV1().Pods(d.Namespace).Get(ctx, *d.Name, metav1.GetOptions{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get pod: %w", err)
+			return nil, eris.Wrap(err, "failed to get pod")
 		}
 	default:
-		return nil, fmt.Errorf("either labelSelector or name must be specified")
+		return nil, eris.New("either labelSelector or name must be specified")
 	}
 
 	podJS, err := json.Marshal(pod)
 	if err != nil {
-		return nil, fmt.Errorf("error creating JSON for pod: %w", err)
+		return nil, eris.Wrap(err, "error creating JSON for pod")
 	}
 
 	copied := pod.DeepCopy()
@@ -194,7 +195,7 @@ func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to
 	ec := &v1.EphemeralContainer{
 		EphemeralContainerCommon: v1.EphemeralContainerCommon{
 			Name:  fmt.Sprintf("probe-%s", rand.String(5)),
-			Image: f.probeImage, // TODO: configurable
+			Image: f.probeImage,
 			Args:  args,
 			Env:   to.ToEnv(),
 		},
@@ -202,17 +203,17 @@ func (f *Factory) installEphemeralPod(ctx context.Context, d *api.ObjectSpec, to
 	copied.Spec.EphemeralContainers = append(copied.Spec.EphemeralContainers, *ec)
 	debugJS, err := json.Marshal(copied)
 	if err != nil {
-		return nil, fmt.Errorf("error creating JSON for debug container: %w", err)
+		return nil, eris.Wrap(err, "error creating JSON for debug container")
 	}
 
 	patch, err := strategicpatch.CreateTwoWayMergePatch(podJS, debugJS, pod)
 	if err != nil {
-		return nil, fmt.Errorf("error creating patch to add debug container: %w", err)
+		return nil, eris.Wrap(err, "error creating patch to add debug container")
 	}
 
 	pod, err = f.client.CoreV1().Pods(d.Namespace).Patch(ctx, pod.Name, types.StrategicMergePatchType, patch, metav1.PatchOptions{}, "ephemeralcontainers")
 	if err != nil {
-		return nil, fmt.Errorf("error adding ephemeral container to pod: %w", err)
+		return nil, eris.Wrap(err, "error adding ephemeral container to pod")
 	}
 	probe := &Probe{
 		pod:           pod,

@@ -4,12 +4,14 @@ go 1.19
 
 require (
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/sanity-io/litter v1.5.5
+	github.com/rotisserie/eris v0.5.4
 	github.com/spf13/cobra v1.6.1
+	github.com/thessem/zap-prettyconsole v0.2.0
 	k8s.io/api v0.25.2
 )
 
 require (
+	github.com/Code-Hex/dd v1.1.0 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -35,6 +37,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/afero v1.8.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect

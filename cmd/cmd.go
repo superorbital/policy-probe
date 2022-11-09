@@ -12,6 +12,8 @@ import (
 	"github.com/superorbital/kubectl-probe/pkg/api"
 	"github.com/superorbital/kubectl-probe/pkg/probe"
 	"github.com/superorbital/kubectl-probe/pkg/test"
+	_ "github.com/thessem/zap-prettyconsole"
+	prettyconsole "github.com/thessem/zap-prettyconsole"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -55,16 +57,21 @@ to quickly create a Cobra application.`,
 				log.Fatalf("failed to parse config: %v", err)
 				return
 			}
-			initLogger("console", debug)
+			initLogger(false, debug)
 			clientset, err := newClientset()
 			if err != nil {
 				log.Fatalf("failed to create client: %v", err)
 				return
 			}
-			if err := test.Run(cmd.Context(), config, test.NewFactory(probe.NewFactory(clientset, config.Spec.ProbeImage))); err != nil {
-				zap.L().Fatal("failed", zap.Error(err))
+			passed, err := test.Run(cmd.Context(), config, test.NewFactory(probe.NewFactory(clientset, config.Spec.ProbeImage)))
+			if err != nil {
+				zap.L().Fatal("failed to run tests", zap.Error(err))
 			}
-			zap.L().Info("passed")
+			if passed {
+				zap.L().Info("passed!")
+			} else {
+				zap.L().Fatal("failed!")
+			}
 		},
 	}
 	viper.AutomaticEnv()
@@ -91,19 +98,21 @@ func newClientset() (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-func initLogger(encoding string, debug bool) {
-	loggerConfig := zap.Config{
-		Level:            zap.NewAtomicLevelAt(zap.InfoLevel),
-		Encoding:         encoding,
-		EncoderConfig:    zap.NewProductionEncoderConfig(),
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
+func initLogger(json bool, debug bool) {
+	var config zap.Config
+	if json {
+		config = zap.NewProductionConfig()
+	} else {
+		config = prettyconsole.NewConfig()
 	}
 	if debug {
-		loggerConfig.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+		config.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	} else {
+		config.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	}
+	config.DisableStacktrace = true
 
-	logger := zap.Must(loggerConfig.Build())
+	logger := zap.Must(config.Build())
 	zap.ReplaceGlobals(logger)
 
 }

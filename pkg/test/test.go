@@ -2,21 +2,20 @@ package test
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/rotisserie/eris"
 	"github.com/superorbital/kubectl-probe/pkg/api"
 	"github.com/superorbital/kubectl-probe/pkg/probe"
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/util/errors"
 )
 
-func Run(ctx context.Context, cfg api.TestSuite, factory *Factory) error {
-	var errs []error
+func Run(ctx context.Context, cfg api.TestSuite, factory *Factory) (bool, error) {
+	passed := true
 	for _, tc := range cfg.Spec.TestCases {
 		zap.L().Info("running test", zap.String("description", tc.Description))
 		source, err := factory.BuildSource(ctx, &tc)
 		if err != nil {
-			return fmt.Errorf("failed to create from: %w", err)
+			return false, eris.Wrap(err, "failed to create source")
 		}
 		if tc.Expect == api.PassExpectType {
 			err = source.AssertReachable(ctx)
@@ -24,13 +23,13 @@ func Run(ctx context.Context, cfg api.TestSuite, factory *Factory) error {
 			err = source.AssertUnreachable(ctx)
 		}
 		if err != nil {
-			errs = append(errs, err)
-			zap.L().Info("failed", zap.String("description", tc.Description))
+			zap.L().Warn("failed", zap.String("description", tc.Description), zap.Error(err))
+			passed = false
 		} else {
 			zap.L().Info("passed", zap.String("description", tc.Description))
 		}
 	}
-	return errors.NewAggregate(errs)
+	return passed, nil
 }
 
 type Factory struct {

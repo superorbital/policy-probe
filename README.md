@@ -3,7 +3,7 @@
 ## Usage
 
 ```bash
-kubectl probe --config testsuite.yaml
+kubectl probe -f testsuite.yaml
 ```
 
 ---

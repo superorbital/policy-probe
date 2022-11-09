@@ -75,7 +75,7 @@ to quickly create a Cobra application.`,
 		},
 	}
 	viper.AutomaticEnv()
-	cmd.Flags().StringVar(&cfgFile, "config", "", "config file")
+	cmd.Flags().StringVarP(&cfgFile, "config", "f", "", "config file")
 	cmd.Flags().StringVar(&config.Spec.ProbeImage, "image", "ghcr.io/superorbital/kubectl-probe:latest", "image for the probe container")
 	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug logging")
 	cmd.AddCommand(Probe())

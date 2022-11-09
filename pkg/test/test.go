@@ -13,6 +13,7 @@ import (
 func Run(ctx context.Context, cfg api.TestSuite, factory *Factory) error {
 	var errs []error
 	for _, tc := range cfg.Spec.TestCases {
+		zap.L().Info("running test", zap.String("description", tc.Description))
 		source, err := factory.BuildSource(ctx, &tc)
 		if err != nil {
 			return fmt.Errorf("failed to create from: %w", err)

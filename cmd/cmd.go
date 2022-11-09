@@ -17,9 +17,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+var debug bool
+
 func New() *cobra.Command {
 	var cfgFile string
-	var debug bool
 	var config api.TestSuite
 	cmd := &cobra.Command{
 		Use:   "kubectl-probe",
@@ -32,20 +33,6 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 		SilenceUsage: true, // Don't show usage on errors
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			loggerConfig := zap.Config{
-				Level:            zap.NewAtomicLevelAt(zap.InfoLevel),
-				Encoding:         "json",
-				EncoderConfig:    zap.NewProductionEncoderConfig(),
-				OutputPaths:      []string{"stderr"},
-				ErrorOutputPaths: []string{"stderr"},
-			}
-			if debug {
-				loggerConfig.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-			}
-
-			logger := zap.Must(loggerConfig.Build())
-			zap.ReplaceGlobals(logger)
-
 			ctx, cancel := context.WithCancel(cmd.Context())
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -68,6 +55,7 @@ to quickly create a Cobra application.`,
 				log.Fatalf("failed to parse config: %v", err)
 				return
 			}
+			initLogger("console", debug)
 			clientset, err := newClientset()
 			if err != nil {
 				log.Fatalf("failed to create client: %v", err)
@@ -101,4 +89,21 @@ func newClientset() (*kubernetes.Clientset, error) {
 		return nil, fmt.Errorf("failed to create clientset: %w", err)
 	}
 	return clientset, nil
+}
+
+func initLogger(encoding string, debug bool) {
+	loggerConfig := zap.Config{
+		Level:            zap.NewAtomicLevelAt(zap.InfoLevel),
+		Encoding:         encoding,
+		EncoderConfig:    zap.NewProductionEncoderConfig(),
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+	if debug {
+		loggerConfig.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	}
+
+	logger := zap.Must(loggerConfig.Build())
+	zap.ReplaceGlobals(logger)
+
 }

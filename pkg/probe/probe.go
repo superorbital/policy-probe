@@ -76,13 +76,20 @@ type Probe struct {
 	containerName string
 }
 
-type message struct {
+type probeLog struct {
+	Fail    *int    `json:"fail,omitempty"`
+	Success *int    `json:"success,omitempty"`
+	Msg     string  `json:"msg,omitempty"`
+	Error   *string `json:"error,omitempty"`
+}
+
+type testResult struct {
 	Fail    int
 	Success int
 }
 
 func (p *Probe) AssertReachable(ctx context.Context) error {
-	return p.assert(ctx, func(old, new message) (bool, error) {
+	return p.assert(ctx, func(old, new testResult) (bool, error) {
 		if new.Fail > old.Fail {
 			return false, fmt.Errorf("probe was not able to reach destination")
 		}
@@ -94,7 +101,7 @@ func (p *Probe) AssertReachable(ctx context.Context) error {
 }
 
 func (p *Probe) AssertUnreachable(ctx context.Context) error {
-	return p.assert(ctx, func(old, new message) (bool, error) {
+	return p.assert(ctx, func(old, new testResult) (bool, error) {
 		if new.Success > old.Success {
 			return false, fmt.Errorf("probe was able to reach destination")
 		}
@@ -105,7 +112,7 @@ func (p *Probe) AssertUnreachable(ctx context.Context) error {
 	})
 }
 
-func (p *Probe) assert(ctx context.Context, test func(message, message) (bool, error)) error {
+func (p *Probe) assert(ctx context.Context, test func(testResult, testResult) (bool, error)) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	err := wait.PollImmediateUntil(time.Second, func() (done bool, err error) {
@@ -131,14 +138,20 @@ func (p *Probe) assert(ctx context.Context, test func(message, message) (bool, e
 	if err != nil {
 		return err
 	}
-	var prior message
+	var old testResult
 	return wait.PollImmediateUntil(time.Second, func() (done bool, err error) {
-		var msg message
+		var msg probeLog
 		if err = json.NewDecoder(stream).Decode(&msg); err != nil {
 			return false, fmt.Errorf("failed to decode stream: %w", err)
 		}
 		zap.L().Debug("received probe message", zap.Any("message", msg))
-		return test(prior, msg)
+		if msg.Success != nil && msg.Fail != nil {
+			new := testResult{Success: *msg.Success, Fail: *msg.Fail}
+			done, err = test(old, new)
+			old = new
+			return
+		}
+		return
 	}, ctx.Done())
 }
 

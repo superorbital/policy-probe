@@ -34,6 +34,7 @@ to quickly create a Cobra application.`,
 			if err := viper.Unmarshal(&cfg); err != nil {
 				zap.L().Fatal("failed to parse config", zap.Error(err))
 			}
+			initLogger("json", debug)
 
 			go logMetrics(ctx, cfg.Interval)
 			probe.Run(ctx, cfg)
@@ -46,6 +47,7 @@ to quickly create a Cobra application.`,
 	viper.BindPFlags(cmd.Flags())
 	return cmd
 }
+
 func logMetrics(ctx context.Context, duration time.Duration) {
 	for {
 		select {
